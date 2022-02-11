@@ -1260,7 +1260,7 @@ class Command(BaseCommand):
 
     def get_help_option(self, ctx: Context) -> t.Optional["Option"]:
         """Returns the help option object."""
-        help_options = self.get_help_option_names(ctx)
+        help_options = ["-h", "--help"]
 
         if not help_options or not self.add_help_option:
             return None
@@ -1276,7 +1276,7 @@ class Command(BaseCommand):
             is_eager=True,
             expose_value=False,
             callback=show_help,
-            help=_("Show this message and exit."),
+            help=_("display this help"),
         )
 
     def make_parser(self, ctx: Context) -> OptionParser:
@@ -2113,18 +2113,7 @@ class Parameter:
         return self.name  # type: ignore
 
     def make_metavar(self) -> str:
-        if self.metavar is not None:
-            return self.metavar
-
-        metavar = self.type.get_metavar(self)
-
-        if metavar is None:
-            metavar = self.type.name.upper()
-
-        if self.nargs != 1:
-            metavar += "..."
-
-        return metavar
+        return ""
 
     @t.overload
     def get_default(
