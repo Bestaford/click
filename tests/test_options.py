@@ -153,14 +153,15 @@ def test_init_bad_default_list(runner, multiple, nargs, default):
         click.Option(["-a"], type=type, multiple=multiple, nargs=nargs, default=default)
 
 
-def test_empty_envvar(runner):
+@pytest.mark.parametrize("env_key", ["MYPATH", "AUTO_MYPATH"])
+def test_empty_envvar(runner, env_key):
     @click.command()
     @click.option("--mypath", type=click.Path(exists=True), envvar="MYPATH")
     def cli(mypath):
         click.echo(f"mypath: {mypath}")
 
-    result = runner.invoke(cli, [], env={"MYPATH": ""})
-    assert result.exit_code == 0
+    result = runner.invoke(cli, env={env_key: ""}, auto_envvar_prefix="AUTO")
+    assert result.exception is None
     assert result.output == "mypath: None\n"
 
 
@@ -502,6 +503,15 @@ def test_missing_option_string_cast():
     assert str(excinfo.value) == "Missing parameter: a"
 
 
+def test_missing_required_flag(runner):
+    cli = click.Command(
+        "cli", params=[click.Option(["--on/--off"], is_flag=True, required=True)]
+    )
+    result = runner.invoke(cli)
+    assert result.exit_code == 2
+    assert "Error: Missing option '--on'." in result.output
+
+
 def test_missing_choice(runner):
     @click.command()
     @click.option("--foo", type=click.Choice(["foo", "bar"]), required=True)
@@ -643,7 +653,6 @@ def test_option_custom_class_reusable(runner):
 
     # Both of the commands should have the --help option now.
     for cmd in (cmd1, cmd2):
-
         result = runner.invoke(cmd, ["--help"])
         assert "I am a help text" in result.output
         assert "you wont see me" not in result.output
@@ -796,6 +805,28 @@ def test_do_not_show_default_empty_multiple():
 
 
 @pytest.mark.parametrize(
+    ("ctx_value", "opt_value", "expect"),
+    [
+        (None, None, False),
+        (None, False, False),
+        (None, True, True),
+        (False, None, False),
+        (False, False, False),
+        (False, True, True),
+        (True, None, True),
+        (True, False, False),
+        (True, True, True),
+        (False, "one", True),
+    ],
+)
+def test_show_default_precedence(ctx_value, opt_value, expect):
+    ctx = click.Context(click.Command("test"), show_default=ctx_value)
+    opt = click.Option("-a", default=1, help="value", show_default=opt_value)
+    help = opt.get_help_record(ctx)[1]
+    assert ("default:" in help) is expect
+
+
+@pytest.mark.parametrize(
     ("args", "expect"),
     [
         (None, (None, None, ())),
@@ -873,3 +904,21 @@ def test_type_from_flag_value():
 )
 def test_is_bool_flag_is_correctly_set(option, expected):
     assert option.is_bool_flag is expected
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"count": True, "multiple": True}, "'count' is not valid with 'multiple'."),
+        ({"count": True, "is_flag": True}, "'count' is not valid with 'is_flag'."),
+        (
+            {"multiple": True, "is_flag": True},
+            "'multiple' is not valid with 'is_flag', use 'count'.",
+        ),
+    ],
+)
+def test_invalid_flag_combinations(runner, kwargs, message):
+    with pytest.raises(TypeError) as e:
+        click.Option(["-a"], **kwargs)
+
+    assert message in str(e.value)
